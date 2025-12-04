@@ -513,9 +513,18 @@ class TokenManager:
                 debug_logger.log_info(f"[ST_TO_AT] 🔴 异常: {str(e)}")
                 raise
     
-    async def rt_to_at(self, refresh_token: str) -> dict:
-        """Convert Refresh Token to Access Token"""
+    async def rt_to_at(self, refresh_token: str, client_id: Optional[str] = None) -> dict:
+        """Convert Refresh Token to Access Token
+
+        Args:
+            refresh_token: Refresh Token
+            client_id: Client ID (optional, uses default if not provided)
+        """
+        # Use provided client_id or default
+        effective_client_id = client_id or "app_LlGpXReQgckcGGUo2JrYvtJK"
+
         debug_logger.log_info(f"[RT_TO_AT] 开始转换 Refresh Token 为 Access Token...")
+        debug_logger.log_info(f"[RT_TO_AT] 使用 Client ID: {effective_client_id[:20]}...")
         proxy_url = await self.proxy_manager.get_proxy_url()
 
         async with AsyncSession() as session:
@@ -527,7 +536,7 @@ class TokenManager:
             kwargs = {
                 "headers": headers,
                 "json": {
-                    "client_id": "app_LlGpXReQgckcGGUo2JrYvtJK",
+                    "client_id": effective_client_id,
                     "grant_type": "refresh_token",
                     "redirect_uri": "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback",
                     "refresh_token": refresh_token
@@ -600,6 +609,7 @@ class TokenManager:
     async def add_token(self, token_value: str,
                        st: Optional[str] = None,
                        rt: Optional[str] = None,
+                       client_id: Optional[str] = None,
                        remark: Optional[str] = None,
                        update_if_exists: bool = False,
                        image_enabled: bool = True,
@@ -612,6 +622,7 @@ class TokenManager:
             token_value: Access Token
             st: Session Token (optional)
             rt: Refresh Token (optional)
+            client_id: Client ID (optional)
             remark: Remark (optional)
             update_if_exists: If True, update existing token instead of raising error
             image_enabled: Enable image generation (default: True)
@@ -747,6 +758,7 @@ class TokenManager:
             name=name,
             st=st,
             rt=rt,
+            client_id=client_id,
             remark=remark,
             expiry_time=expiry_time,
             is_active=True,
@@ -831,12 +843,13 @@ class TokenManager:
                           token: Optional[str] = None,
                           st: Optional[str] = None,
                           rt: Optional[str] = None,
+                          client_id: Optional[str] = None,
                           remark: Optional[str] = None,
                           image_enabled: Optional[bool] = None,
                           video_enabled: Optional[bool] = None,
                           image_concurrency: Optional[int] = None,
                           video_concurrency: Optional[int] = None):
-        """Update token (AT, ST, RT, remark, image_enabled, video_enabled, concurrency limits)"""
+        """Update token (AT, ST, RT, client_id, remark, image_enabled, video_enabled, concurrency limits)"""
         # If token (AT) is updated, decode JWT to get new expiry time
         expiry_time = None
         if token:
@@ -846,7 +859,7 @@ class TokenManager:
             except Exception:
                 pass  # If JWT decode fails, keep expiry_time as None
 
-        await self.db.update_token(token_id, token=token, st=st, rt=rt, remark=remark, expiry_time=expiry_time,
+        await self.db.update_token(token_id, token=token, st=st, rt=rt, client_id=client_id, remark=remark, expiry_time=expiry_time,
                                    image_enabled=image_enabled, video_enabled=video_enabled,
                                    image_concurrency=image_concurrency, video_concurrency=video_concurrency)
 
@@ -1063,7 +1076,7 @@ class TokenManager:
             if not new_at and token_data.rt:
                 try:
                     debug_logger.log_info(f"[AUTO_REFRESH] 📝 Token {token_id}: 尝试使用 RT 刷新...")
-                    result = await self.rt_to_at(token_data.rt)
+                    result = await self.rt_to_at(token_data.rt, client_id=token_data.client_id)
                     new_at = result.get("access_token")
                     new_rt = result.get("refresh_token", token_data.rt)  # RT might be updated
                     refresh_method = "RT"
